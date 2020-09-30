@@ -3,7 +3,9 @@ const D3=3
 const POINT=15
 const UNSET = 0
 
-function GmshDiscreteModel(mshfile; renumber=true)
+
+function GmshDiscreteModel(mshfile; renumber=true,
+  isperiodic::NTuple{D,Bool}=tfill(false,Val{D}())) where D
   @check_if_loaded
   if !isfile(mshfile)
     error("Msh file not found: $mshfile")
@@ -14,17 +16,62 @@ function GmshDiscreteModel(mshfile; renumber=true)
   gmsh.option.setNumber("Mesh.SaveAll", 1)
   gmsh.option.setNumber("Mesh.MedImportGroupsOfNodes", 1)
   gmsh.open(mshfile)
-  
+
   renumber && gmsh.model.mesh.renumberNodes()
   renumber && gmsh.model.mesh.renumberElements()
-  
+
   grid, cell_to_entity = _setup_grid(gmsh)
-  grid_topology = UnstructuredGridTopology(grid)
+  if any(isperiodic)
+    grid_topology = _setup_grid_topology_periodic_bc(grid,isperiodic)
+  else
+    grid_topology = UnstructuredGridTopology(grid)
+  end
   labeling = _setup_labeling(gmsh,grid,grid_topology,cell_to_entity)
 
   gmsh.finalize()
 
   UnstructuredDiscreteModel(grid,grid_topology,labeling)
+end
+
+function _setup_grid_topology_periodic_bc(grid,isperiodic)
+
+  dir = findall(isperiodic)[1]
+
+  nodes = get_node_coordinates(grid)
+  periodic_coords = [x[dir] for x in nodes]
+  master_coord = minimum(periodic_coords)
+  slave_coord = maximum(periodic_coords)
+  slave_point_to_master_point = []
+  for (i,node) in enumerate(nodes)
+    if node[dir] < master_coord + 1.0e-6
+      append!(slave_point_to_master_point,i)
+    end
+  end
+  rdir = collect(1:length(isperiodic))
+  setdiff!(rdir,dir)
+  slave_point_to_point = []
+  for i in slave_point_to_master_point
+    for (j,node) in enumerate(nodes)
+      if (abs(node[rdir[1]] - nodes[i][rdir[1]]) < 1e-06) &
+         (abs(node[rdir[2]] - nodes[i][rdir[2]]) < 1e-06) &
+         (abs(node[dir] - slave_coord) < 1e-06)
+        append!(slave_point_to_point,j)
+      end
+    end
+  end
+
+  point_to_isperiodic = fill(false,length(nodes))
+  point_to_isperiodic[slave_point_to_point] .= true
+
+  vertex_to_node = findall( .! point_to_isperiodic)
+  point_to_vertex = fill(-1,length(point_to_isperiodic))
+  point_to_vertex[vertex_to_node] = 1:length(vertex_to_node)
+  point_to_vertex[slave_point_to_point] = point_to_vertex[slave_point_to_master_point]
+
+  cell_to_vertices = Table(LocalToGlobalArray(get_cell_nodes(grid),point_to_vertex))
+
+  vertex_to_node = findall( .! point_to_isperiodic)
+  _generate_grid_topology_from_grid(grid,cell_to_vertices,vertex_to_node)
 end
 
 function _setup_grid(gmsh)
