@@ -5,7 +5,8 @@ const UNSET = 0
 
 
 function GmshDiscreteModel(mshfile; renumber=true,
-  isperiodic::NTuple{D,Bool}=tfill(false,Val{D}())) where D
+  isperiodic::NTuple=(false,)) where D
+
   @check_if_loaded
   if !isfile(mshfile)
     error("Msh file not found: $mshfile")
