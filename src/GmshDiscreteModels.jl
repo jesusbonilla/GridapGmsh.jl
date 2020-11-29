@@ -14,10 +14,10 @@ function GmshDiscreteModel(mshfile; renumber=true)
   gmsh.option.setNumber("Mesh.SaveAll", 1)
   gmsh.option.setNumber("Mesh.MedImportGroupsOfNodes", 1)
   gmsh.open(mshfile)
-  
+
   renumber && gmsh.model.mesh.renumberNodes()
   renumber && gmsh.model.mesh.renumberElements()
-  
+
   grid, cell_to_entity = _setup_grid(gmsh)
   grid_topology = UnstructuredGridTopology(grid)
   labeling = _setup_labeling(gmsh,grid,grid_topology,cell_to_entity)
@@ -79,7 +79,7 @@ function _setup_node_coords(gmsh,D)
 end
 
 function _fill_node_coords!(node_to_coords,nodeTags,coord,D)
-  m = zero(mutable(Point{D,Float64}))
+  m = zero(Mutable(Point{D,Float64}))
   for node in nodeTags
     for j in 1:D
       k = (node-1)*D3 + j
@@ -254,7 +254,11 @@ function _setup_reffes(gmsh,d)
   reffe = _reffe_from_etype(etype)
   reffes = [reffe,]
 
-  orientation = Val(is_simplex(get_polytope(reffe)))
+  if is_simplex(get_polytope(reffe))
+    orientation = Oriented()
+  else
+    orientation = NonOriented()
+  end
 
   (cell_to_type, reffes, orientation)
 end
